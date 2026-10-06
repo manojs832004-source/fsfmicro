@@ -1,0 +1,1861 @@
+<!-- VORTEX APEX - Manufacturing Production & Quality Management System -->
+<!-- Architecture: Strictly 6 Collections (Suppliers, Materials, ProductionOrders, Batches, Machines, Inspections) -->
+<!-- Enhanced: Digital Twin, Command Palette, Traceability Graph, Charts, QR Labels, Wizard, Dark Mode -->
+
+<div class="min-h-screen pb-16">
+
+  <!-- Toast Notification -->
+  <div *ngIf="toastMessage" class="toast-popup" [ngClass]="toastType">
+    <i class="fa-solid fa-circle-check" *ngIf="toastType === 'success'"></i>
+    <i class="fa-solid fa-triangle-exclamation" *ngIf="toastType === 'error'"></i>
+    <i class="fa-solid fa-circle-info" *ngIf="toastType === 'info'"></i>
+    <span>{{ toastMessage }}</span>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- FEATURE 2: COMMAND PALETTE (Ctrl+K)                                       -->
+  <!-- ========================================================================= -->
+  <div *ngIf="cmdPaletteOpen" class="cmd-overlay" (click)="cmdPaletteOpen = false">
+    <div class="cmd-modal" (click)="$event.stopPropagation()">
+      <div class="cmd-input-wrap">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input class="cmd-input" type="text" [(ngModel)]="cmdQuery" (input)="cmdSearch()"
+          placeholder="Search suppliers, materials, batches, machines, inspections, defects…"
+          autofocus />
+        <kbd style="font-size:0.65rem;padding:0.1rem 0.3rem;background:var(--bg-card-alt);border:1px solid var(--border-subtle);border-radius:3px;color:var(--text-dim)">ESC</kbd>
+      </div>
+
+      <div class="cmd-results">
+        <div *ngIf="cmdResults.length === 0 && cmdQuery.length > 0" class="cmd-empty">
+          <i class="fa-solid fa-circle-question" style="font-size:1.5rem;margin-bottom:0.5rem;display:block;color:var(--text-subtle)"></i>
+          No results found for "{{ cmdQuery }}"
+        </div>
+        <div *ngFor="let r of cmdResults; let i = index"
+          class="cmd-result-item" [class.highlighted]="i === cmdHighlightIndex"
+          (click)="cmdSelectResult(r)">
+          <div class="cmd-result-icon" [style.background]="r.bg" [style.color]="r.color">
+            <i class="fa-solid" [ngClass]="r.icon"></i>
+          </div>
+          <div class="cmd-result-text">
+            <div class="cmd-result-title">{{ r.title }}</div>
+            <div class="cmd-result-sub">{{ r.sub }}</div>
+          </div>
+          <span style="font-size:0.65rem;color:var(--text-subtle);text-transform:uppercase">{{ r.type }}</span>
+        </div>
+      </div>
+
+      <div class="cmd-footer">
+        <span><kbd>↑↓</kbd> Navigate</span>
+        <span><kbd>↵</kbd> Open</span>
+        <span><kbd>ESC</kbd> Close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header & Telemetry Bar -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="header-brand">
+        <div class="brand-logo">
+          <i class="fa-solid fa-industry"></i>
+        </div>
+        <div>
+          <div class="brand-title">VORTEX <span class="text-blue">APEX</span></div>
+          <div class="brand-subtitle">
+            Manufacturing Production & Quality Management System
+          </div>
+        </div>
+      </div>
+
+      <!-- Environment & Status Telemetry -->
+      <div class="header-telemetry">
+        <!-- Ctrl+K Command Palette Trigger -->
+        <button class="cmd-palette-trigger" (click)="cmdPaletteOpen = true" title="Global Search (Ctrl+K)">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <span>Search everything…</span>
+          <kbd>Ctrl+K</kbd>
+        </button>
+
+        <div class="telemetry-pill">
+          <span class="status-dot pulse-green"></span>
+          <span>REST API: <strong>Port 5000</strong></span>
+        </div>
+        <div class="telemetry-pill" title="Strictly 6 MongoDB Collections Rule">
+          <i class="fa-solid fa-cubes text-blue"></i>
+          <span>Database: <strong>6 Major Collections</strong></span>
+        </div>
+        <div class="telemetry-actions">
+          <!-- FEATURE 7: Dark/Light Mode Toggle -->
+          <button class="theme-toggle-btn" (click)="toggleTheme()" [title]="darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+            <i class="fa-solid" [ngClass]="darkMode ? 'fa-sun' : 'fa-moon'"></i>
+          </button>
+          <button (click)="refreshAllData()" class="btn btn-secondary btn-sm" title="Sync Live Data">
+            <i class="fa-solid fa-rotate" [ngClass]="{'fa-spin': isLoading}"></i> Sync
+          </button>
+          <button (click)="printQualityReport()" class="btn btn-secondary btn-sm" title="Print/Export Quality Report">
+            <i class="fa-solid fa-file-pdf"></i> Export
+          </button>
+          <button (click)="resetFactoryData()" class="btn btn-secondary btn-sm"
+            title="Restore Seed Data Across 6 Collections">
+            <i class="fa-solid fa-arrows-rotate"></i> Reset Data
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs for All 8 Modules + Analytics -->
+    <nav class="nav-tabs-wrapper">
+      <div class="nav-tabs">
+        <button class="nav-tab" [class.active]="activeTab === 'analytics'" (click)="setTab('analytics')">
+          <i class="fa-solid fa-chart-line text-blue"></i>
+          <span>Quality Analytics</span>
+          <span class="badge badge-info" *ngIf="analytics">{{ analytics.analysis.defectPercentage }}% Defect</span>
+        </button>
+
+        <button class="nav-tab" [class.active]="activeTab === 'suppliers'" (click)="setTab('suppliers')">
+          <i class="fa-solid fa-handshake"></i>
+          <span>1. Suppliers</span>
+          <span class="tab-count">{{ suppliers.length }}</span>
+        </button>
+
+        <button class="nav-tab" [class.active]="activeTab === 'materials'" (click)="setTab('materials')">
+          <i class="fa-solid fa-boxes-stacked"></i>
+          <span>2. Raw Materials</span>
+          <span class="tab-count">{{ materials.length }}</span>
+        </button>
+
+        <button class="nav-tab" [class.active]="activeTab === 'planning'" (click)="setTab('planning')">
+          <i class="fa-solid fa-calendar-check"></i>
+          <span>3. Planning</span>
+          <span class="tab-count">{{ plans.length }}</span>
+        </button>
+
+        <button class="nav-tab" [class.active]="activeTab === 'orders'" (click)="setTab('orders')">
+          <i class="fa-solid fa-file-invoice"></i>
+          <span>4. Production Orders</span>
+          <span class="tab-count">{{ orders.length }}</span>
+        </button>
+
+        <button class="nav-tab" [class.active]="activeTab === 'machines'" (click)="setTab('machines')">
+          <i class="fa-solid fa-gears"></i>
+          <span>5. Machines</span>
+          <span class="tab-count">{{ machines.length }}</span>
+        </button>
+
+        <button class="nav-tab" [class.active]="activeTab === 'batches'" (click)="setTab('batches')">
+          <i class="fa-solid fa-layer-group"></i>
+          <span>6. Batches</span>
+          <span class="tab-count">{{ batches.length }}</span>
+        </button>
+
+        <button class="nav-tab" [class.active]="activeTab === 'inspections'" (click)="setTab('inspections')">
+          <i class="fa-solid fa-microscope"></i>
+          <span>7. Quality Inspection</span>
+          <span class="badge badge-pending" *ngIf="pendingQCBatches.length > 0">{{ pendingQCBatches.length }}
+            Pending</span>
+        </button>
+
+        <button class="nav-tab" [class.active]="activeTab === 'defects'" (click)="setTab('defects')">
+          <i class="fa-solid fa-triangle-exclamation text-danger"></i>
+          <span>8. Defect CAPA & Trace</span>
+          <span class="badge badge-defective">{{ defects.length }}</span>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="main-container">
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 9: PRODUCTION-QUALITY ANALYSIS (ADDITIONAL REQUIREMENT)           -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'analytics'" class="space-y-6">
+
+      <div class="content-header-banner">
+        <div>
+          <h1 class="page-title">Production & Quality Analysis Engine</h1>
+          <p class="page-desc">
+            Real-time quality KPIs computed across all manufacturing batches and inspection audits. Strict mathematical
+            formulation satisfying Project #20 requirements.
+          </p>
+        </div>
+        <div class="banner-badge">
+          <i class="fa-solid fa-shield-halved"></i> 6 Collections Architecture • MES Ready
+        </div>
+      </div>
+
+      <!-- Core 4 Metrics Specified in Prompt -->
+      <div class="kpi-grid">
+
+        <!-- 1. Total Batches -->
+        <div class="kpi-card glass-panel border-blue">
+          <div class="kpi-header">
+            <span class="kpi-title">Total Batches (B<sub>total</sub>)</span>
+            <div class="kpi-icon-wrap bg-blue-subtle">
+              <i class="fa-solid fa-layer-group text-blue"></i>
+            </div>
+          </div>
+          <div class="kpi-value">{{ analytics?.analysis?.totalBatches || 0 }}</div>
+          <div class="kpi-subtext">Overall factory runs logged in <code>Batches</code> collection</div>
+          <div class="kpi-progress-bar">
+            <div class="kpi-progress-fill bg-blue" style="width: 100%"></div>
+          </div>
+        </div>
+
+        <!-- 2. Inspected Batches -->
+        <div class="kpi-card glass-panel border-cyan">
+          <div class="kpi-header">
+            <span class="kpi-title">Inspected Batches (B<sub>inspected</sub>)</span>
+            <div class="kpi-icon-wrap bg-cyan-subtle">
+              <i class="fa-solid fa-microscope text-cyan"></i>
+            </div>
+          </div>
+          <div class="kpi-value">{{ analytics?.analysis?.inspectedBatches || 0 }}</div>
+          <div class="kpi-subtext">{{ analytics?.analysis?.uninspectedBatches || 0 }} uninspected (In-Progress /
+            Pending-QC)</div>
+          <div class="kpi-progress-bar">
+            <div class="kpi-progress-fill bg-cyan"
+              [style.width.%]="analytics?.analysis?.totalBatches ? ((analytics?.analysis?.inspectedBatches || 0) / (analytics?.analysis?.totalBatches || 1) * 100) : 0">
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Defective Batches -->
+        <div class="kpi-card glass-panel border-red">
+          <div class="kpi-header">
+            <span class="kpi-title">Defective Batches (B<sub>defective</sub>)</span>
+            <div class="kpi-icon-wrap bg-red-subtle">
+              <i class="fa-solid fa-triangle-exclamation text-danger"></i>
+            </div>
+          </div>
+          <div class="kpi-value text-danger">{{ analytics?.analysis?.defectiveBatches || 0 }}</div>
+          <div class="kpi-subtext">Batches with <code>Inspections.result == 'Fail'</code></div>
+          <div class="kpi-progress-bar">
+            <div class="kpi-progress-fill bg-danger"
+              [style.width.%]="analytics?.analysis?.inspectedBatches ? ((analytics?.analysis?.defectiveBatches || 0) / (analytics?.analysis?.inspectedBatches || 1) * 100) : 0">
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Defect Percentage -->
+        <div class="kpi-card glass-panel glass-panel-glow border-warning">
+          <div class="kpi-header">
+            <span class="kpi-title">Defect Percentage</span>
+            <div class="kpi-icon-wrap bg-warning-subtle">
+              <i class="fa-solid fa-percent text-warning"></i>
+            </div>
+          </div>
+          <div class="kpi-value"
+            [ngClass]="(analytics?.analysis?.defectPercentage || 0) > 15 ? 'text-danger' : 'text-success'">
+            {{ analytics?.analysis?.defectPercentage || 0 }}%
+          </div>
+          <div class="kpi-subtext formula-tag">
+            (B<sub>defective</sub> ÷ B<sub>inspected</sub>) × 100
+          </div>
+          <div class="kpi-progress-bar">
+            <div class="kpi-progress-fill"
+              [ngClass]="(analytics?.analysis?.defectPercentage || 0) > 15 ? 'bg-danger' : 'bg-success'"
+              [style.width.%]="analytics?.analysis?.defectPercentage || 0"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Secondary Executive Metrics -->
+      <div class="analytics-subgrid">
+        <div class="sub-kpi-card glass-panel">
+          <div class="sub-kpi-icon"><i class="fa-solid fa-circle-check text-success"></i></div>
+          <div>
+            <div class="sub-kpi-label">First-Pass Yield Rate</div>
+            <div class="sub-kpi-val text-success">{{ analytics?.analysis?.yieldRate || 0 }}% ({{
+              analytics?.analysis?.passedBatches }} Batches)</div>
+          </div>
+        </div>
+
+        <div class="sub-kpi-card glass-panel">
+          <div class="sub-kpi-icon"><i class="fa-solid fa-chart-pie text-blue"></i></div>
+          <div>
+            <div class="sub-kpi-label">Overall Batch Failure Rate</div>
+            <div class="sub-kpi-val">{{ analytics?.analysis?.overallFailureRate || 0 }}% (vs Total Batches)</div>
+          </div>
+        </div>
+
+        <div class="sub-kpi-card glass-panel">
+          <div class="sub-kpi-icon"><i class="fa-solid fa-eye text-cyan"></i></div>
+          <div>
+            <div class="sub-kpi-label">Inspection Coverage</div>
+            <div class="sub-kpi-val">{{ analytics?.analysis?.inspectionCoverageRate || 0 }}% of plant output</div>
+          </div>
+        </div>
+
+        <div class="sub-kpi-card glass-panel">
+          <div class="sub-kpi-icon"><i class="fa-solid fa-gears text-indigo"></i></div>
+          <div>
+            <div class="sub-kpi-label">Active Machines</div>
+            <div class="sub-kpi-val">{{ analytics?.analysis?.activeMachinesCount }}/{{
+              analytics?.analysis?.totalMachinesCount }} Online</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- FEATURE 5: INTERACTIVE QUALITY CHARTS (Pareto / FPY / Trend)      -->
+      <!-- ================================================================= -->
+      <div class="charts-grid">
+        <!-- Pareto Chart -->
+        <div class="chart-card glass-panel">
+          <h4><i class="fa-solid fa-chart-column text-blue mr-2"></i>Defect Pareto Analysis (80/20 Rule)</h4>
+          <div class="chart-canvas-wrap" style="height: 260px;">
+            <canvas #paretoCanvas></canvas>
+          </div>
+        </div>
+
+        <!-- FPY Gauge -->
+        <div class="chart-card glass-panel">
+          <h4><i class="fa-solid fa-gauge-high text-success mr-2"></i>First-Pass Yield Gauge</h4>
+          <div class="fpy-gauge-wrap" style="height: 220px; position: relative;">
+            <canvas #fpyGaugeCanvas></canvas>
+            <div class="fpy-gauge-label">{{ analytics?.analysis?.yieldRate || 0 }}%</div>
+          </div>
+          <div class="text-center" style="margin-top: 0.5rem;">
+            <span class="fpy-gauge-sublabel">First-Pass Yield = Passed Batches ÷ Inspected Batches × 100</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Yield Trend Sparkline -->
+      <div class="glass-panel p-5">
+        <div class="panel-header">
+          <h3><i class="fa-solid fa-chart-area text-blue mr-2"></i>Yield Trend (Last 7 Shifts)</h3>
+          <span class="badge badge-info">Simulated Shift Data</span>
+        </div>
+        <div class="chart-canvas-wrap" style="height: 180px;">
+          <canvas #trendCanvas></canvas>
+        </div>
+      </div>
+
+      <!-- Visual Breakdown Split Panels -->
+      <div class="dashboard-split-grid">
+
+        <!-- Inspection Breakdown -->
+        <div class="glass-panel p-5">
+          <div class="panel-header">
+            <h3><i class="fa-solid fa-chart-simple text-blue mr-2"></i> Quality Inspection Distribution</h3>
+            <span class="badge badge-info">Real-time Stream</span>
+          </div>
+
+          <div class="mt-4 space-y-4">
+            <div *ngFor="let item of analytics?.charts?.statusDistribution" class="metric-row">
+              <div class="flex-between text-sm mb-1">
+                <span class="font-medium flex-center gap-2">
+                  <span class="status-bullet" [style.background]="item.color"></span>
+                  {{ item.label }}
+                </span>
+                <span class="font-bold">{{ item.count }} Batches ({{ analytics?.analysis?.totalBatches ? ((item.count /
+                  (analytics?.analysis?.totalBatches || 1)) * 100).toFixed(1) : 0 }}%)</span>
+              </div>
+              <div class="kpi-progress-bar">
+                <div class="kpi-progress-fill" [style.background]="item.color"
+                  [style.width.%]="analytics?.analysis?.totalBatches ? ((item.count / (analytics?.analysis?.totalBatches || 1)) * 100) : 0">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="formula-box mt-6">
+            <div class="font-semibold text-xs uppercase tracking-wider text-muted mb-1">Exact Mathematical Formulation:
+            </div>
+            <code
+              class="text-blue text-sm">Defect % = (Defective Batches ÷ Inspected Batches) × 100 = ({{ analytics?.analysis?.defectiveBatches }} ÷ {{ analytics?.analysis?.inspectedBatches }}) × 100 = {{ analytics?.analysis?.defectPercentage }}%</code>
+          </div>
+        </div>
+
+        <!-- Defect Severity & Categories -->
+        <div class="glass-panel p-5">
+          <div class="panel-header">
+            <h3><i class="fa-solid fa-bug text-danger mr-2"></i> Defect Severity & Root Causes</h3>
+            <span class="badge badge-defective">{{ analytics?.analysis?.totalDefectsLogged || 0 }} Embedded
+              Defects</span>
+          </div>
+
+          <!-- Severity Cards -->
+          <div class="severity-cards-grid mt-4">
+            <div class="severity-pill critical">
+              <div class="text-xs uppercase font-semibold">Critical</div>
+              <div class="text-2xl font-bold">{{ analytics?.charts?.severityBreakdown?.Critical || 0 }}</div>
+              <div class="text-xs">Machine Halt</div>
+            </div>
+            <div class="severity-pill major">
+              <div class="text-xs uppercase font-semibold">Major</div>
+              <div class="text-2xl font-bold">{{ analytics?.charts?.severityBreakdown?.Major || 0 }}</div>
+              <div class="text-xs">Rework / Scrap</div>
+            </div>
+            <div class="severity-pill minor">
+              <div class="text-xs uppercase font-semibold">Minor</div>
+              <div class="text-2xl font-bold">{{ analytics?.charts?.severityBreakdown?.Minor || 0 }}</div>
+              <div class="text-xs">Calibration</div>
+            </div>
+          </div>
+
+          <!-- Defect Types (Pareto) -->
+          <div class="mt-5">
+            <h4 class="text-xs font-semibold uppercase text-muted mb-2">Defect Categories (Embedded in Inspections)</h4>
+            <div class="space-y-2">
+              <div *ngFor="let d of analytics?.charts?.defectTypes"
+                class="flex-between p-2 rounded bg-dark-subtle text-sm">
+                <span><i class="fa-solid fa-angle-right text-blue mr-2"></i> {{ d.type }}</span>
+                <span class="badge badge-neutral">{{ d.count }} record(s)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Machine Quality & Yield Correlation Table -->
+      <div class="glass-panel p-5">
+        <div class="panel-header">
+          <div>
+            <h3><i class="fa-solid fa-microchip text-indigo mr-2"></i> Equipment Yield & Failure Correlation</h3>
+            <p class="text-xs text-muted">Batch yield and defect breakdown tracked per machine asset (Collection:
+              <code>Machines</code>)</p>
+          </div>
+          <button (click)="openModal('newMachine')" class="btn btn-secondary btn-sm">
+            <i class="fa-solid fa-plus"></i> Add Machine
+          </button>
+        </div>
+
+        <div class="custom-table-wrapper mt-4">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Machine Asset</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Total Batches</th>
+                <th>Passed</th>
+                <th>Defective</th>
+                <th>Yield Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let m of analytics?.charts?.machineYield">
+                <td>
+                  <div class="font-semibold">{{ m.name }}</div>
+                  <div class="text-xs text-blue">{{ m.code }}</div>
+                </td>
+                <td><span class="badge badge-neutral">{{ m.type }}</span></td>
+                <td>
+                  <span class="badge"
+                    [ngClass]="m.status === 'Running' ? 'badge-passed' : (m.status === 'Idle' ? 'badge-info' : 'badge-defective')">
+                    {{ m.status }}
+                  </span>
+                </td>
+                <td><strong>{{ m.totalBatches }}</strong></td>
+                <td class="text-success font-semibold">{{ m.passedBatches }}</td>
+                <td class="text-danger font-semibold">{{ m.defectiveBatches }}</td>
+                <td>
+                  <span class="font-bold text-sm" [ngClass]="m.yieldRate >= 80 ? 'text-success' : 'text-danger'">
+                    {{ m.yieldRate }}%
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 1: SUPPLIER MANAGEMENT (Collection: Suppliers)                    -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'suppliers'" class="space-y-6">
+      <div class="panel-header-toolbar">
+        <div>
+          <h1 class="page-title">Module 1: Supplier Management & Approved Vendor List (AVL)</h1>
+          <p class="page-desc">Govern raw material suppliers, vendor ratings, compliance states, and backward
+            traceability (Collection: <code>Suppliers</code>).</p>
+        </div>
+        <div class="toolbar-actions">
+          <div class="search-input-wrap">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" [(ngModel)]="searchTerm" placeholder="Search suppliers, contacts..."
+              class="form-control search-input" />
+          </div>
+          <select [(ngModel)]="statusFilter" class="form-control w-auto">
+            <option value="ALL">All Statuses</option>
+            <option value="Active">Active</option>
+            <option value="Suspended">Suspended</option>
+            <option value="Blacklisted">Blacklisted</option>
+          </select>
+          <button (click)="openModal('newSupplier')" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> Onboard Supplier
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div *ngFor="let s of filteredSuppliers" class="glass-panel p-5">
+          <div class="flex-between mb-2">
+            <span class="text-xs font-bold text-blue">{{ s.supplierCode }}</span>
+            <span class="badge"
+              [ngClass]="s.status === 'Active' ? 'badge-passed' : (s.status === 'Suspended' ? 'badge-pending' : 'badge-defective')">
+              {{ s.status }}
+            </span>
+          </div>
+
+          <h3 class="font-bold text-base mb-1">{{ s.name }}</h3>
+          <div class="text-xs text-muted mb-2">Contact: <strong>{{ s.contactPerson }}</strong></div>
+
+          <div class="flex items-center gap-1 text-warning text-xs mb-3">
+            <i class="fa-solid fa-star"></i>
+            <span class="font-bold" style="color:var(--text-heading)">{{ s.rating }}</span>
+            <span class="text-dim">/ 5.0 Rating</span>
+            <span class="text-muted ml-auto">Lead Time: <strong>{{ s.leadTimeDays }}d</strong></span>
+          </div>
+
+          <div class="bg-dark-subtle p-3 rounded mb-3 space-y-1 text-xs text-muted">
+            <div><i class="fa-solid fa-envelope mr-2 text-dim"></i> {{ s.email }}</div>
+            <div><i class="fa-solid fa-phone mr-2 text-dim"></i> {{ s.phone }}</div>
+            <div><i class="fa-solid fa-location-dot mr-2 text-dim"></i> {{ s.address }}</div>
+            <div *ngIf="s.defectiveBatchesTraced > 0" class="text-danger font-semibold pt-1 border-t border-subtle">
+              <i class="fa-solid fa-triangle-exclamation mr-1"></i> Traced to {{ s.defectiveBatchesTraced }} defective
+              batch(es)
+            </div>
+          </div>
+
+          <div class="flex-between pt-2 border-t border-subtle text-xs">
+            <!-- Status Toggle Gatekeeper -->
+            <div class="flex gap-1">
+              <button *ngIf="s.status !== 'Active'" (click)="toggleSupplierStatus(s, 'Active')"
+                class="btn btn-secondary btn-sm" title="Mark Active">
+                Active
+              </button>
+              <button *ngIf="s.status !== 'Suspended'" (click)="toggleSupplierStatus(s, 'Suspended')"
+                class="btn btn-secondary btn-sm" title="Suspend">
+                Suspend
+              </button>
+              <button *ngIf="s.status !== 'Blacklisted'" (click)="toggleSupplierStatus(s, 'Blacklisted')"
+                class="btn btn-danger btn-sm" title="Blacklist">
+                Blacklist
+              </button>
+            </div>
+            <button (click)="deleteSupplier(s._id || s.id, s.name)" class="icon-btn-danger" title="Delete/Deactivate">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 2: RAW-MATERIAL MANAGEMENT (Collection: Materials)                -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'materials'" class="space-y-6">
+      <div class="panel-header-toolbar">
+        <div>
+          <h1 class="page-title">Module 2: Raw-Material Inventory & Stock Gatekeeper</h1>
+          <p class="page-desc">Real-time inventory levels, automated reorder alerts, and supplier sourcing (Collection:
+            <code>Materials</code>).</p>
+        </div>
+        <div class="toolbar-actions">
+          <div class="search-input-wrap">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" [(ngModel)]="searchTerm" placeholder="Search SKU, material name..."
+              class="form-control search-input" />
+          </div>
+          <select [(ngModel)]="statusFilter" class="form-control w-auto">
+            <option value="ALL">All Stock Statuses</option>
+            <option value="In-Stock">In-Stock</option>
+            <option value="Low-Stock">Low-Stock</option>
+            <option value="Out-of-Stock">Out-of-Stock</option>
+          </select>
+          <button (click)="openModal('newMaterial')" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> Register SKU
+          </button>
+        </div>
+      </div>
+
+      <!-- FEATURE 8: Quick Filter Chips & Export -->
+      <div class="flex-between">
+        <div class="filter-chips">
+          <button class="filter-chip" [class.active]="quickFilter === 'low-stock'" (click)="setQuickFilter('low-stock')">
+            <i class="fa-solid fa-triangle-exclamation"></i> Low Stock Alert
+          </button>
+        </div>
+        <div class="flex gap-2">
+          <button class="export-btn" (click)="exportCSV('materials')"><i class="fa-solid fa-file-csv"></i> CSV</button>
+          <button class="export-btn" (click)="exportJSON('materials')"><i class="fa-solid fa-file-code"></i> JSON</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div *ngFor="let m of filteredMaterials" class="glass-panel p-5">
+          <div class="flex-between mb-2">
+            <span class="lot-pill">{{ m.sku }}</span>
+            <span class="badge"
+              [ngClass]="m.stockStatus === 'In-Stock' ? 'badge-passed' : (m.stockStatus === 'Low-Stock' ? 'badge-pending' : 'badge-defective')">
+              {{ m.stockStatus }}
+            </span>
+          </div>
+
+          <h3 class="font-bold text-base mb-1">{{ m.name }}</h3>
+          <div class="text-xs text-muted mb-3">{{ m.category }} • {{ m.storageLocation }}</div>
+
+          <div class="bg-dark-subtle p-3 rounded mb-3 space-y-1.5 text-xs">
+            <div class="flex-between">
+              <span class="text-dim">Current Stock:</span>
+              <strong class="text-sm font-bold"
+                [ngClass]="m.currentStock <= m.reorderLevel ? 'text-danger' : ''">
+                {{ m.currentStock }} {{ m.unit }}
+              </strong>
+            </div>
+            <div class="flex-between">
+              <span class="text-dim">Reorder Threshold:</span>
+              <span>{{ m.reorderLevel }} {{ m.unit }}</span>
+            </div>
+            <div class="flex-between">
+              <span class="text-dim">Unit Cost:</span>
+              <span class="text-success font-semibold">${{ m.unitCost }} / {{ m.unit }}</span>
+            </div>
+            <div class="flex-between">
+              <span class="text-dim">Linked Supplier:</span>
+              <span class="text-blue font-medium truncate max-w-[160px]">{{ m.supplierName }}</span>
+            </div>
+          </div>
+
+          <div class="flex-between pt-2 border-t border-subtle text-xs">
+            <button (click)="openModal('restock', m)" class="btn btn-secondary btn-sm">
+              <i class="fa-solid fa-dolly text-blue"></i> Restock Inward
+            </button>
+            <button (click)="deleteMaterial(m._id || m.id, m.sku)" class="icon-btn-danger" title="Delete Material">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 3: PRODUCTION PLANNING (Collection: ProductionOrders - Planning)  -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'planning'" class="space-y-6">
+      <div class="panel-header-toolbar">
+        <div>
+          <h1 class="page-title">Module 3: Production Planning & Feasibility Analysis</h1>
+          <p class="page-desc">Forecast manufacturing schedules, map BOM materials, and validate stock feasibility
+            before shop-floor release (Collection: <code>ProductionOrders</code>).</p>
+        </div>
+        <div class="toolbar-actions">
+          <button (click)="openModal('newPlan')" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> Create Production Plan
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div *ngFor="let p of filteredPlans" class="glass-panel p-5">
+          <div class="flex-between mb-3">
+            <span class="lot-pill">{{ p.orderNumber }}</span>
+            <span class="badge" [ngClass]="p.orderStatus === 'Approved-Plan' ? 'badge-passed' : 'badge-pending'">
+              {{ p.orderStatus }}
+            </span>
+          </div>
+
+          <h3 class="font-bold text-lg mb-1">{{ p.productName }}</h3>
+          <div class="text-xs text-muted mb-3">Target Qty: <strong>{{ p.plannedQuantity }} units</strong> | Priority:
+            <span class="font-semibold text-blue">{{ p.priority }}</span></div>
+
+          <!-- Required BOM Materials Checklist -->
+          <div class="bg-dark-subtle p-3 rounded mb-4">
+            <div class="text-xs font-semibold uppercase text-muted mb-2">Required Bill of Materials (BOM):</div>
+            <div class="space-y-1.5 text-xs">
+              <div *ngFor="let rm of p.requiredMaterials" class="flex-between">
+                <span>{{ rm.materialName }} ({{ rm.sku }})</span>
+                <span class="font-semibold" style="color:var(--text-heading)">{{ rm.requiredQty }} {{ rm.unit }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs text-muted mb-4 bg-dark-subtle p-2.5 rounded">
+            <div>Schedule Start: <strong>{{ p.plannedStartDate | date:'mediumDate' }}</strong></div>
+            <div>Schedule Due: <strong>{{ p.plannedEndDate | date:'mediumDate' }}</strong></div>
+            <div>Work Center: <strong>{{ p.assignedLine }}</strong></div>
+            <div>Customer: <strong>{{ p.customer }}</strong></div>
+          </div>
+
+          <div class="flex-between pt-2 border-t border-subtle">
+            <div class="flex gap-2">
+              <button (click)="checkFeasibility(p)" class="btn btn-secondary btn-sm">
+                <i class="fa-solid fa-clipboard-check text-blue"></i> Check Feasibility
+              </button>
+              <button *ngIf="p.orderStatus === 'Draft-Plan'" (click)="approvePlan(p._id || p.id)"
+                class="btn btn-success btn-sm">
+                <i class="fa-solid fa-check"></i> Approve Plan
+              </button>
+            </div>
+            <button (click)="deleteOrder(p._id || p.id, p.orderNumber)" class="icon-btn-danger">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 4: PRODUCTION ORDERS (Collection: ProductionOrders - Execution)   -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'orders'" class="space-y-6">
+      <div class="panel-header-toolbar">
+        <div>
+          <h1 class="page-title">Module 4: Production Order Execution & Inventory Deduction</h1>
+          <p class="page-desc">Release approved plans, trigger atomic raw-material consumption, and track batch
+            fulfillment (Collection: <code>ProductionOrders</code>).</p>
+        </div>
+        <div class="toolbar-actions">
+          <div class="search-input-wrap">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" [(ngModel)]="searchTerm" placeholder="Search order #, product..."
+              class="form-control search-input" />
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-panel custom-table-wrapper">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Order Number</th>
+              <th>Customer</th>
+              <th>Product Target</th>
+              <th>Planned Qty</th>
+              <th>Approved Qty</th>
+              <th>Status</th>
+              <th>Inventory Allocated</th>
+              <th class="text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let o of filteredOrders">
+              <td><span class="lot-pill">{{ o.orderNumber }}</span></td>
+              <td class="font-semibold">{{ o.customer }}</td>
+              <td>
+                <div class="font-medium">{{ o.productName }}</div>
+                <div class="text-xs text-dim">Priority: {{ o.priority }}</div>
+              </td>
+              <td><strong>{{ o.plannedQuantity }}</strong> units</td>
+              <td>
+                <span class="font-bold"
+                  [ngClass]="o.producedQuantity >= o.plannedQuantity ? 'text-success' : 'text-blue'">
+                  {{ o.producedQuantity }} units
+                </span>
+              </td>
+              <td>
+                <span class="badge"
+                  [ngClass]="o.orderStatus === 'Completed' ? 'badge-passed' : (o.orderStatus === 'In-Production' ? 'badge-info' : 'badge-pending')">
+                  {{ o.orderStatus }}
+                </span>
+              </td>
+              <td>
+                <span *ngIf="o.orderStatus === 'In-Production' || o.orderStatus === 'Completed'"
+                  class="text-success text-xs font-semibold">
+                  <i class="fa-solid fa-check-double mr-1"></i> Atomically Deducted
+                </span>
+                <span *ngIf="o.orderStatus === 'Approved-Plan'" class="text-warning text-xs font-semibold">
+                  <i class="fa-solid fa-lock mr-1"></i> Reserved for Release
+                </span>
+                <span *ngIf="o.orderStatus === 'Draft-Plan'" class="text-dim text-xs">
+                  Pending Feasibility
+                </span>
+              </td>
+              <td class="text-right">
+                <div class="action-buttons-group">
+                  <button *ngIf="o.orderStatus === 'Approved-Plan'" (click)="releaseOrder(o._id || o.id)"
+                    class="btn btn-primary btn-sm" title="Release to Shop Floor & Deduct Raw Materials">
+                    <i class="fa-solid fa-play"></i> Release
+                  </button>
+                  <button *ngIf="o.orderStatus === 'In-Production'" (click)="completeOrder(o._id || o.id)"
+                    class="btn btn-success btn-sm" title="Mark Completed">
+                    <i class="fa-solid fa-flag-checkered"></i> Complete
+                  </button>
+                  <button (click)="deleteOrder(o._id || o.id, o.orderNumber)" class="icon-btn-danger">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 5: MACHINE MANAGEMENT (Collection: Machines)                      -->
+    <!-- FEATURE 1: DIGITAL TWIN SHOP FLOOR GRID                                  -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'machines'" class="space-y-6">
+      <div class="panel-header-toolbar">
+        <div>
+          <h1 class="page-title">Module 5: Shop-Floor Digital Twin & Machine Assets</h1>
+          <p class="page-desc">Interactive factory bay grid with live machine status LEDs, telemetry metrics, and 4-state controllers
+            (Collection: <code>Machines</code>).</p>
+        </div>
+        <div class="toolbar-actions">
+          <button (click)="openModal('newMachine')" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> Register Machine
+          </button>
+        </div>
+      </div>
+
+      <!-- Digital Twin Shop Floor Grid -->
+      <div class="shop-floor-grid">
+        <div *ngFor="let m of filteredMachines" class="machine-node" [ngClass]="'status-' + m.status">
+          <div class="machine-node-header">
+            <span class="text-xs font-bold text-blue">{{ m.machineCode }}</span>
+            <span class="machine-led" [ngClass]="'led-' + m.status" [title]="m.status"></span>
+          </div>
+
+          <div class="machine-node-name">{{ m.name }}</div>
+          <div class="text-xs text-muted mb-3">{{ m.type }} • {{ m.productionLine }}</div>
+
+          <div class="machine-node-body">
+            <span><em>Throughput:</em> <strong>{{ m.capacityPerHour }} u/hr</strong></span>
+            <span><em>Op Hours:</em> <strong>{{ m.totalOperatingHours }} hrs</strong></span>
+            <span><em>Operator:</em> <strong>{{ m.operatorInCharge }}</strong></span>
+            <span><em>Maintenance:</em> <strong>{{ m.nextMaintenanceDue | date:'shortDate' }}</strong></span>
+          </div>
+
+          <div class="machine-node-footer">
+            <button (click)="toggleMachineMaintenance(m)" class="btn btn-secondary btn-sm">
+              <i class="fa-solid fa-wrench text-blue"></i>
+              {{ m.status === 'Maintenance' ? 'Idle' : 'Maint.' }}
+            </button>
+            <button (click)="deleteMachine(m._id || m.id, m.name)" class="icon-btn-danger">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 6: BATCH MANAGEMENT (Collection: Batches)                         -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'batches'" class="space-y-6">
+      <div class="panel-header-toolbar">
+        <div>
+          <h1 class="page-title">Module 6: Batch Manufacturing & Shop-Floor Execution</h1>
+          <p class="page-desc">Create production runs, lock machines to Running, and hand over completed runs to
+            Pending-QC (Collection: <code>Batches</code>).</p>
+        </div>
+        <div class="toolbar-actions">
+          <div class="search-input-wrap">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" [(ngModel)]="searchTerm" placeholder="Search batch code, order, machine..."
+              class="form-control search-input" />
+          </div>
+          <button (click)="openModal('newBatch')" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> Start New Batch
+          </button>
+        </div>
+      </div>
+
+      <!-- FEATURE 8: Quick Filter Chips & Export -->
+      <div class="flex-between">
+        <div class="filter-chips">
+          <button class="filter-chip" [class.active]="quickFilter === 'defective'" (click)="setQuickFilter('defective')">
+            <i class="fa-solid fa-triangle-exclamation"></i> Show Only Defective
+          </button>
+          <button class="filter-chip" [class.active]="quickFilter === 'pending-qc'" (click)="setQuickFilter('pending-qc')">
+            <i class="fa-solid fa-clock"></i> Pending QC Only
+          </button>
+        </div>
+        <div class="flex gap-2">
+          <button class="export-btn" (click)="exportCSV('batches')"><i class="fa-solid fa-file-csv"></i> CSV</button>
+          <button class="export-btn" (click)="exportJSON('batches')"><i class="fa-solid fa-file-code"></i> JSON</button>
+        </div>
+      </div>
+
+      <div class="glass-panel custom-table-wrapper">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th (click)="toggleSort('batchCode')">Batch Code <i class="fa-solid sort-icon" [ngClass]="getSortIcon('batchCode')"></i></th>
+              <th>Parent Order</th>
+              <th>Product Target</th>
+              <th>Assigned Machine</th>
+              <th>Operator</th>
+              <th (click)="toggleSort('quantityProduced')">Qty Produced <i class="fa-solid sort-icon" [ngClass]="getSortIcon('quantityProduced')"></i></th>
+              <th>Batch Status</th>
+              <th class="text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let b of filteredBatches">
+              <td><span class="lot-pill">{{ b.batchCode }}</span></td>
+              <td><span class="font-medium text-blue">{{ b.orderNumber }}</span></td>
+              <td class="font-semibold">{{ b.productName }}</td>
+              <td>{{ b.machineName }}</td>
+              <td>{{ b.operatorName }}</td>
+              <td><strong>{{ b.quantityProduced }}</strong> / {{ b.targetQuantity }}</td>
+              <td>
+                <span class="badge"
+                  [ngClass]="b.batchStatus === 'Approved' ? 'badge-passed' : (b.batchStatus === 'Rejected' ? 'badge-defective' : (b.batchStatus === 'Pending-QC' ? 'badge-pending' : 'badge-info'))">
+                  {{ b.batchStatus }}
+                </span>
+              </td>
+              <td class="text-right">
+                <div class="action-buttons-group">
+                  <button *ngIf="b.batchStatus === 'In-Progress'" (click)="completeBatch(b)"
+                    class="btn btn-secondary btn-sm" title="Finish Run & Hand over to QC">
+                    <i class="fa-solid fa-check"></i> Finish Run
+                  </button>
+                  <button *ngIf="b.batchStatus === 'Pending-QC'" (click)="openModal('newInspection', b)"
+                    class="btn btn-primary btn-sm" title="Perform Quality Inspection">
+                    <i class="fa-solid fa-microscope"></i> Audit QC
+                  </button>
+                  <!-- FEATURE 5: QR Batch Traveler -->
+                  <button (click)="openTravelerLabel(b)" class="btn btn-secondary btn-sm"
+                    title="Generate Batch Traveler Label">
+                    <i class="fa-solid fa-qrcode text-blue"></i> Label
+                  </button>
+                  <button (click)="viewTraceability(b.batchCode)" class="btn btn-secondary btn-sm"
+                    title="End-to-End Backward Traceability">
+                    <i class="fa-solid fa-route text-blue"></i> Trace
+                  </button>
+                  <button (click)="deleteBatch(b._id || b.id, b.batchCode)" class="icon-btn-danger">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 7: QUALITY INSPECTION (Collection: Inspections)                   -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'inspections'" class="space-y-6">
+
+      <!-- Pending-QC Queue Alert Banner -->
+      <div *ngIf="pendingQCBatches.length > 0"
+        class="p-4 bg-warning-subtle border border-warning rounded-lg flex-between">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-triangle-exclamation text-warning text-xl"></i>
+          <div>
+            <div class="font-bold text-sm" style="color:var(--text-heading)">{{ pendingQCBatches.length }} Batch(es) in Pending-QC Queue
+            </div>
+            <div class="text-xs text-muted">Awaiting quality certification before release to finished goods inventory.
+            </div>
+          </div>
+        </div>
+        <button (click)="openModal('newInspection', pendingQCBatches[0])" class="btn btn-primary btn-sm">
+          Audit First Pending Batch
+        </button>
+      </div>
+
+      <div class="panel-header-toolbar">
+        <div>
+          <h1 class="page-title">Module 7: Quality Inspection Audit Gates</h1>
+          <p class="page-desc">Enforce quality audits; automatically set batch to Approved or Rejected with defect
+            logging (Collection: <code>Inspections</code>).</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div *ngFor="let insp of filteredInspections" class="glass-panel p-5">
+          <div class="flex-between border-b border-subtle pb-3 mb-3">
+            <div>
+              <span class="text-xs uppercase text-blue font-bold tracking-wider">{{ insp.inspectionCode }}</span>
+              <h3 class="text-lg font-bold">{{ insp.productName }}</h3>
+              <div class="text-xs text-muted">Batch: <strong style="color:var(--text-heading)">{{ insp.batchCode }}</strong> |
+                Date: {{ insp.inspectionDate | date:'mediumDate' }}</div>
+            </div>
+            <span class="badge" [ngClass]="insp.result === 'Pass' ? 'badge-passed' : 'badge-defective'">
+              {{ insp.result }}
+            </span>
+          </div>
+
+          <div class="text-xs text-muted mb-3 flex-between">
+            <span>Auditor: <strong style="color:var(--text-heading)">{{ insp.inspectorName }}</strong></span>
+            <span>Sample Checked: <strong style="color:var(--text-heading)">{{ insp.sampleSizeChecked }} units</strong></span>
+          </div>
+
+          <p class="text-xs text-dim italic mb-4 bg-dark-subtle p-2.5 rounded">
+            "{{ insp.remarks || 'Standard compliance verified.' }}"
+          </p>
+
+          <!-- Embedded Defects Indicator -->
+          <div *ngIf="insp.defects && insp.defects.length > 0" class="mb-4 p-3 bg-red-subtle border border-red rounded">
+            <div class="text-xs font-bold text-danger mb-1">
+              <i class="fa-solid fa-bug mr-1"></i> {{ insp.defects.length }} Defect(s) Documented
+            </div>
+            <div *ngFor="let d of insp.defects" class="text-xs text-muted flex-between">
+              <span>{{ d.defectType }} ({{ d.severity }})</span>
+              <span class="text-danger font-semibold">{{ d.defectiveUnitCount }} defective units</span>
+            </div>
+          </div>
+
+          <div class="flex-between pt-2 border-t border-subtle text-xs">
+            <button (click)="viewTraceability(insp.inspectionCode)" class="btn btn-secondary btn-sm">
+              <i class="fa-solid fa-route text-blue"></i> Backward Traceability
+            </button>
+            <button (click)="deleteInspection(insp._id || insp.id, insp.inspectionCode)" class="icon-btn-danger">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- MODULE 8: DEFECT MANAGEMENT & CAPA (Collection: Inspections.defects[])   -->
+    <!-- ========================================================================= -->
+    <section *ngIf="activeTab === 'defects'" class="space-y-6">
+      <div class="panel-header-toolbar">
+        <div>
+          <h1 class="page-title">Module 8: Defect Management & CAPA Resolution</h1>
+          <p class="page-desc">Classify non-conformities embedded in <code>Inspections.defects[]</code>, enforce CAPA
+            corrective actions, and backward trace.</p>
+        </div>
+        <div class="toolbar-actions">
+          <div class="search-input-wrap">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" [(ngModel)]="searchTerm" placeholder="Search defects, causes..."
+              class="form-control search-input" />
+          </div>
+          <select [(ngModel)]="statusFilter" class="form-control w-auto">
+            <option value="ALL">All Severities</option>
+            <option value="Critical">Critical</option>
+            <option value="Major">Major</option>
+            <option value="Minor">Minor</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div *ngFor="let def of filteredDefects" class="glass-panel p-5 defect-card">
+          <div class="flex-between mb-2">
+            <span class="badge"
+              [ngClass]="def.severity === 'Critical' ? 'badge-defective' : (def.severity === 'Major' ? 'badge-pending' : 'badge-neutral')">
+              {{ def.severity }}
+            </span>
+            <span class="text-xs font-mono text-dim">{{ def.defectCode }}</span>
+          </div>
+
+          <h3 class="font-bold text-base mb-1">{{ def.defectType }}</h3>
+          <div class="text-xs text-blue mb-3">Batch: <strong>{{ def.batchCode }}</strong></div>
+
+          <div class="space-y-1.5 text-xs text-muted mb-4 bg-dark-subtle p-3 rounded">
+            <div><strong>Defective Units:</strong> <span class="text-danger font-bold">{{ def.defectiveUnitCount
+                }}</span></div>
+            <div><strong>Root Cause:</strong> {{ def.rootCause }}</div>
+            <div><strong>Root Cause Category:</strong> <span class="badge badge-neutral text-[10px]">{{
+                def.rootCauseCategory }}</span></div>
+            <div><strong>Corrective Action:</strong> <span class="font-semibold" style="color:var(--text-heading)">{{ def.correctiveAction
+                }}</span></div>
+          </div>
+
+          <div class="flex-between pt-2 border-t border-subtle text-xs">
+            <div class="flex items-center gap-1">
+              <span class="text-dim">CAPA:</span>
+              <select [(ngModel)]="def.resolutionStatus" (change)="updateDefectCAPA(def, def.resolutionStatus)"
+                class="form-control text-xs py-0.5 px-1.5 w-auto">
+                <option value="Open">Open</option>
+                <option value="Sent-for-Rework">Sent-for-Rework</option>
+                <option value="Scrapped">Scrapped</option>
+                <option value="Resolved">Resolved</option>
+              </select>
+            </div>
+            <button (click)="viewTraceability(def.batchCode)" class="btn btn-secondary btn-sm"
+              title="Trace upstream supply chain">
+              <i class="fa-solid fa-route text-blue"></i> Trace
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- MODALS SECTION                                                            -->
+  <!-- ========================================================================= -->
+
+  <!-- Modal: Feasibility Report (Module 3) -->
+  <div *ngIf="activeModal === 'feasibility'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-clipboard-check text-blue mr-2"></i> Material Feasibility
+          Analysis</h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="mb-4">
+        <div class="text-sm font-semibold">Order Number: <span class="text-blue">{{ feasibilityReport?.orderNumber
+            }}</span></div>
+        <div class="text-xs text-muted">Validation of required Bill of Materials (BOM) against available inventory</div>
+      </div>
+
+      <div class="p-3 mb-4 rounded-lg flex items-center gap-3"
+        [ngClass]="feasibilityReport?.isFeasible ? 'bg-success-bg border border-success' : 'bg-red-subtle border border-red'">
+        <i class="fa-solid text-xl"
+          [ngClass]="feasibilityReport?.isFeasible ? 'fa-circle-check text-success' : 'fa-triangle-exclamation text-danger'"></i>
+        <div>
+          <div class="font-bold text-sm" [ngClass]="feasibilityReport?.isFeasible ? 'text-success' : 'text-danger'">
+            {{ feasibilityReport?.isFeasible ? 'Production Plan Feasible: All raw materials in stock.' : 'Production
+            Shortage: Insufficient raw materials.' }}
+          </div>
+        </div>
+      </div>
+
+      <div class="custom-table-wrapper mb-6">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Material SKU</th>
+              <th>Required Qty</th>
+              <th>Current Stock</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of feasibilityReport?.report">
+              <td>{{ item.materialName }}</td>
+              <td><strong>{{ item.requiredQty }}</strong> {{ item.unit }}</td>
+              <td>{{ item.currentStock }} {{ item.unit }}</td>
+              <td>
+                <span class="badge" [ngClass]="item.isFeasible ? 'badge-passed' : 'badge-defective'">
+                  {{ item.isFeasible ? 'Available' : 'Shortage (-' + item.shortageQty + ')' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-end gap-3 pt-3 border-t border-subtle">
+        <button (click)="closeModal()" class="btn btn-secondary">Close</button>
+        <button *ngIf="feasibilityReport?.isFeasible" (click)="approvePlan(feasibilityReport.orderId)"
+          class="btn btn-success">
+          Approve Production Plan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- FEATURE 3: INTERACTIVE TRACEABILITY NODE GRAPH                            -->
+  <!-- ========================================================================= -->
+  <div *ngIf="activeModal === 'traceability'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6 max-w-3xl" (click)="$event.stopPropagation()" style="max-width:900px">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-route text-blue mr-2"></i> End-to-End Backward Traceability
+          Resolver</h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <p class="text-xs text-muted mb-4">Complete upstream and downstream digital thread — click any node to inspect its full collection document.</p>
+
+      <!-- Interactive Horizontal Node Graph -->
+      <div class="trace-graph-container">
+        <div class="trace-graph">
+          <ng-container *ngFor="let node of traceNodes; let last = last">
+            <div class="trace-node" [ngClass]="'trace-' + node.status"
+              [class.trace-active]="traceFlyoutData === node"
+              (click)="openTraceFlyout(node)">
+              <div class="trace-node-icon">
+                <i class="fa-solid" [ngClass]="node.icon"
+                  [style.color]="node.status === 'fail' ? '#DC2626' : (node.status === 'pass' ? '#059669' : '#2563EB')"></i>
+              </div>
+              <div class="trace-node-label">{{ node.layer }}</div>
+              <div class="trace-node-value">{{ node.value }}</div>
+            </div>
+            <div *ngIf="!last" class="trace-connector"></div>
+          </ng-container>
+        </div>
+      </div>
+
+      <!-- Fallback: Vertical Detail List -->
+      <div class="space-y-4 mt-4">
+        <div class="p-3 bg-dark-subtle rounded border border-subtle">
+          <div class="text-xs uppercase text-blue font-bold mb-1">Downstream: Quality Inspection Audit</div>
+          <div class="text-sm">Audit Code: <strong>{{ traceabilityResult?.inspection?.inspectionCode || 'Pending Formal
+              Audit' }}</strong></div>
+          <div class="text-xs text-muted">Verdict:
+            <span class="badge"
+              [ngClass]="traceabilityResult?.inspection?.result === 'Pass' ? 'badge-passed' : 'badge-defective'">
+              {{ traceabilityResult?.inspection?.result || 'Pending' }}
+            </span>
+          </div>
+        </div>
+
+        <div class="p-3 bg-dark-subtle rounded border border-subtle">
+          <div class="text-xs uppercase text-blue font-bold mb-1">Shop-Floor Execution: Manufacturing Batch</div>
+          <div class="text-sm">Batch: <strong class="text-blue">{{ traceabilityResult?.batch?.batchCode }}</strong>
+          </div>
+          <div class="text-xs text-muted">Operator: {{ traceabilityResult?.batch?.operatorName }} | Target: {{
+            traceabilityResult?.batch?.targetQuantity }} units</div>
+        </div>
+
+        <div class="p-3 bg-dark-subtle rounded border border-subtle">
+          <div class="text-xs uppercase text-blue font-bold mb-1">Equipment Layer: Assigned Machine</div>
+          <div class="text-sm font-semibold">{{ traceabilityResult?.machine?.name }} ({{
+            traceabilityResult?.machine?.machineCode }})</div>
+          <div class="text-xs text-muted">Line: {{ traceabilityResult?.machine?.productionLine }} | Type: {{
+            traceabilityResult?.machine?.type }}</div>
+        </div>
+
+        <div class="p-3 rounded border" style="background: var(--primary-subtle); border-color: var(--primary);">
+          <div class="text-xs uppercase text-blue font-bold mb-2">Upstream Origin: Sourced Raw Materials & Vendors</div>
+          <div class="space-y-2">
+            <div *ngFor="let item of traceabilityResult?.materialsAndSuppliers"
+              class="p-2 rounded border border-subtle text-xs flex-between" style="background:var(--bg-card)">
+              <div>
+                <div class="font-bold" style="color:var(--text-heading)">{{ item.material.name }} ({{ item.material.sku }})</div>
+                <div class="text-dim">Consumed: {{ item.requiredQty }} kg</div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold text-blue">{{ item.supplier.name }}</div>
+                <div class="text-dim">Vendor Rating: {{ item.supplier.rating || 'N/A' }} / 5.0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-4 mt-4 border-t border-subtle">
+        <button (click)="closeModal()" class="btn btn-primary">Close Traceability View</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trace Flyout Drawer (FEATURE 3) -->
+  <div *ngIf="traceFlyoutData" class="trace-flyout">
+    <div class="flex-between mb-4">
+      <h3 class="font-bold text-lg"><i class="fa-solid mr-2" [ngClass]="traceFlyoutData.icon" style="color:var(--primary)"></i>{{ traceFlyoutData.layer }}</h3>
+      <button (click)="closeTraceFlyout()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="text-sm mb-4">
+      <span class="badge" [ngClass]="traceFlyoutData.status === 'pass' ? 'badge-passed' : (traceFlyoutData.status === 'fail' ? 'badge-defective' : 'badge-info')">
+        {{ traceFlyoutData.status === 'pass' ? 'PASS' : (traceFlyoutData.status === 'fail' ? 'FAIL' : 'NEUTRAL') }}
+      </span>
+    </div>
+    <div class="space-y-2 text-xs">
+      <div *ngFor="let key of (traceFlyoutData.detail ? (traceFlyoutData.detail | keyvalue) : [])"
+        class="p-2 rounded bg-dark-subtle flex-between">
+        <span class="font-semibold text-muted" style="max-width:40%;word-break:break-all">{{ key.key }}</span>
+        <span class="text-right" style="max-width:55%;word-break:break-all;color:var(--text-heading)">{{ key.value }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- FEATURE 5: QR BATCH TRAVELER LABEL MODAL                                  -->
+  <!-- ========================================================================= -->
+  <div *ngIf="activeModal === 'traveler'" class="modal-overlay batch-traveler-modal" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()" style="max-width:420px">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-qrcode text-blue mr-2"></i> Batch Traveler Label</h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="traveler-label batch-traveler-print">
+        <div style="font-size:0.85rem;font-weight:800;color:var(--text-heading);margin-bottom:0.5rem">VORTEX APEX</div>
+        <div style="font-size:0.65rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.75rem">Manufacturing Batch Traveler</div>
+
+        <div class="qr-code-wrap">
+          <canvas #qrCanvas></canvas>
+        </div>
+
+        <div class="traveler-info-grid">
+          <dt>Batch Code</dt>
+          <dd>{{ travelerBatch?.batchCode }}</dd>
+          <dt>Order #</dt>
+          <dd>{{ travelerBatch?.orderNumber }}</dd>
+          <dt>Product</dt>
+          <dd>{{ travelerBatch?.productName }}</dd>
+          <dt>Machine</dt>
+          <dd>{{ travelerBatch?.machineName }}</dd>
+          <dt>Operator</dt>
+          <dd>{{ travelerBatch?.operatorName }}</dd>
+          <dt>Target Qty</dt>
+          <dd>{{ travelerBatch?.targetQuantity }} units</dd>
+          <dt>Status</dt>
+          <dd>{{ travelerBatch?.batchStatus }}</dd>
+          <dt>Generated</dt>
+          <dd>{{ travelerBatch?.startTime | date:'short' }}</dd>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 mt-4 pt-3 border-t border-subtle">
+        <button (click)="closeModal()" class="btn btn-secondary">Close</button>
+        <button (click)="printTraveler()" class="btn btn-primary">
+          <i class="fa-solid fa-print"></i> Print Label
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Restock Material (Module 2) -->
+  <div *ngIf="activeModal === 'restock'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-dolly text-blue mr-2"></i> Restock Raw Material Inventory
+        </h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="mb-4">
+        <div class="font-semibold">{{ restockTarget?.name }} ({{ restockTarget?.sku }})</div>
+        <div class="text-xs text-muted">Current Stock: {{ restockTarget?.currentStock }} {{ restockTarget?.unit }} |
+          Supplier: {{ restockTarget?.supplierName }}</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Incoming Inward Quantity ({{ restockTarget?.unit }})</label>
+        <input type="number" [(ngModel)]="restockQuantity" class="form-control" min="1" />
+      </div>
+
+      <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-subtle">
+        <button type="button" (click)="closeModal()" class="btn btn-secondary">Cancel</button>
+        <button type="button" (click)="submitRestock()" class="btn btn-primary">Confirm Inward Stock</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create Production Plan (Module 3) -->
+  <div *ngIf="activeModal === 'newPlan'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-calendar-check text-blue mr-2"></i> Forecast Production Plan
+        </h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form (ngSubmit)="submitNewPlan()">
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Plan / Order Number</label>
+            <input type="text" [(ngModel)]="newPlan.orderNumber" name="orderNumber" required class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Customer</label>
+            <input type="text" [(ngModel)]="newPlan.customer" name="customer" required class="form-control" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Product Name</label>
+            <input type="text" [(ngModel)]="newPlan.productName" name="productName" required class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Planned Quantity</label>
+            <input type="number" [(ngModel)]="newPlan.plannedQuantity" name="plannedQuantity" required
+              class="form-control" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+          <div class="form-group">
+            <label class="form-label">Priority</label>
+            <select [(ngModel)]="newPlan.priority" name="priority" class="form-control">
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+              <option value="Critical">Critical</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Start Date</label>
+            <input type="date" [(ngModel)]="newPlan.plannedStartDate" name="plannedStartDate" required
+              class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Due Date</label>
+            <input type="date" [(ngModel)]="newPlan.plannedEndDate" name="plannedEndDate" required
+              class="form-control" />
+          </div>
+        </div>
+
+        <!-- BOM Builder -->
+        <div class="mb-4">
+          <div class="flex-between mb-2">
+            <label class="form-label mb-0">Bill of Materials (BOM) Mapping</label>
+            <button type="button" (click)="addMaterialRowToPlan()" class="btn btn-secondary btn-sm">
+              <i class="fa-solid fa-plus"></i> Add Material
+            </button>
+          </div>
+          <div *ngFor="let row of newPlan.requiredMaterials; let idx = index" class="flex gap-2 mb-2">
+            <select [(ngModel)]="row.materialId" [name]="'matId_' + idx" class="form-control flex-1">
+              <option *ngFor="let m of materials" [value]="m._id || m.id">{{ m.name }} ({{ m.sku }}) - In Stock: {{
+                m.currentStock }}</option>
+            </select>
+            <input type="number" [(ngModel)]="row.requiredQty" [name]="'qty_' + idx" placeholder="Qty"
+              class="form-control w-28" />
+            <button type="button" (click)="removeMaterialRowFromPlan(idx)" class="icon-btn-danger">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-4 border-t border-subtle">
+          <button type="button" (click)="closeModal()" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save as Draft Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Start Batch (Module 6) -->
+  <div *ngIf="activeModal === 'newBatch'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-layer-group text-blue mr-2"></i> Start Manufacturing Batch
+        </h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form (ngSubmit)="submitNewBatch()">
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Batch Code</label>
+            <input type="text" [(ngModel)]="newBatch.batchCode" name="batchCode" required class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Select In-Production Order</label>
+            <select [(ngModel)]="newBatch.orderId" name="orderId" required class="form-control">
+              <option *ngFor="let o of orders" [value]="o._id || o.id" [disabled]="o.orderStatus !== 'In-Production'">
+                {{ o.orderNumber }} - {{ o.productName }} ({{ o.orderStatus }})
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Assign Machine (Must be Idle)</label>
+            <select [(ngModel)]="newBatch.machineId" name="machineId" required class="form-control">
+              <option *ngFor="let m of machines" [value]="m._id || m.id" [disabled]="m.status !== 'Idle'">
+                {{ m.name }} ({{ m.machineCode }}) - Status: {{ m.status }}
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Batch Target Units</label>
+            <input type="number" [(ngModel)]="newBatch.targetQuantity" name="targetQuantity" required
+              class="form-control" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Lead Operator in Charge</label>
+          <input type="text" [(ngModel)]="newBatch.operatorName" name="operatorName" required class="form-control" />
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-subtle">
+          <button type="button" (click)="closeModal()" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Start Run & Lock Machine</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- FEATURE 6: 3-STEP QUALITY INSPECTION WIZARD (Module 7 & 8)               -->
+  <!-- ========================================================================= -->
+  <div *ngIf="activeModal === 'newInspection'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()" style="max-width:700px">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-microscope text-blue mr-2"></i> Quality Inspection Audit
+          Wizard</h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- Wizard Step Indicators -->
+      <div class="wizard-steps">
+        <div class="wizard-step" [class.active]="wizardStep === 1" [class.completed]="wizardStep > 1" (click)="setWizardStep(1)">
+          <div class="wizard-step-num">{{ wizardStep > 1 ? '✓' : '1' }}</div>
+          <div>Dimensional Check</div>
+        </div>
+        <div class="wizard-step" [class.active]="wizardStep === 2" [class.completed]="wizardStep > 2" (click)="setWizardStep(2)">
+          <div class="wizard-step-num">{{ wizardStep > 2 ? '✓' : '2' }}</div>
+          <div>Defect Tagging</div>
+        </div>
+        <div class="wizard-step" [class.active]="wizardStep === 3" [class.completed]="wizardSigned" (click)="setWizardStep(3)">
+          <div class="wizard-step-num">3</div>
+          <div>Sign-Off</div>
+        </div>
+      </div>
+
+      <form (ngSubmit)="submitNewInspection()">
+
+        <!-- STEP 1: Dimensional Check -->
+        <div *ngIf="wizardStep === 1">
+          <h4 class="font-bold mb-3" style="color:var(--text-heading)"><i class="fa-solid fa-ruler-combined text-blue mr-2"></i>Step 1: Dimensional & Sample Check</h4>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="form-group">
+              <label class="form-label">Inspection Code</label>
+              <input type="text" [(ngModel)]="newInspection.inspectionCode" name="inspectionCode" required
+                class="form-control" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Batch Code</label>
+              <input type="text" [(ngModel)]="newInspection.batchCode" name="batchCode" readonly
+                class="form-control" style="background:var(--bg-surface)" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-4">
+            <div class="form-group">
+              <label class="form-label">Auditor Name</label>
+              <input type="text" [(ngModel)]="newInspection.inspectorName" name="inspectorName" required
+                class="form-control" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Sample Size Checked</label>
+              <input type="number" [(ngModel)]="newInspection.sampleSizeChecked" name="sampleSizeChecked" required
+                class="form-control" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Audit Verdict</label>
+              <select [(ngModel)]="newInspection.result" name="result" class="form-control font-bold"
+                [ngClass]="newInspection.result === 'Pass' ? 'text-success' : 'text-danger'">
+                <option value="Pass">Pass (Approved)</option>
+                <option value="Fail">Fail (Rejected)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Tolerance gauge visualization -->
+          <div class="tolerance-gauge">
+            <span class="text-xs font-semibold" style="min-width:80px;color:var(--text-muted)">Sample Check:</span>
+            <div class="tolerance-bar">
+              <div class="tolerance-fill" [class.in-spec]="newInspection.result === 'Pass'" [class.out-of-spec]="newInspection.result === 'Fail'"
+                [style.width.%]="newInspection.sampleSizeChecked ? Math.min(100, (newInspection.sampleSizeChecked / 50) * 100) : 0"></div>
+            </div>
+            <span class="text-xs font-bold" [ngClass]="newInspection.result === 'Pass' ? 'text-success' : 'text-danger'">
+              {{ newInspection.result === 'Pass' ? 'IN-SPEC' : 'OUT-OF-SPEC' }}
+            </span>
+          </div>
+
+          <div class="flex justify-end mt-4">
+            <button type="button" (click)="wizardStep = 2" class="btn btn-primary">Next: Defect Tagging →</button>
+          </div>
+        </div>
+
+        <!-- STEP 2: Defect Tagging -->
+        <div *ngIf="wizardStep === 2">
+          <h4 class="font-bold mb-3" style="color:var(--text-heading)"><i class="fa-solid fa-bug text-danger mr-2"></i>Step 2: Visual Defect Classification</h4>
+
+          <!-- Severity chip tags -->
+          <div class="mb-4">
+            <label class="form-label">Severity Level</label>
+            <div class="flex gap-2 flex-wrap">
+              <span class="severity-chip chip-minor" [class.active]="newInspection.defect.severity === 'Minor'"
+                (click)="newInspection.defect.severity = 'Minor'">
+                <i class="fa-solid fa-circle-info"></i> Minor
+              </span>
+              <span class="severity-chip chip-major" [class.active]="newInspection.defect.severity === 'Major'"
+                (click)="newInspection.defect.severity = 'Major'">
+                <i class="fa-solid fa-exclamation"></i> Major
+              </span>
+              <span class="severity-chip chip-critical" [class.active]="newInspection.defect.severity === 'Critical'"
+                (click)="newInspection.defect.severity = 'Critical'">
+                <i class="fa-solid fa-skull-crossbones"></i> Critical
+              </span>
+            </div>
+          </div>
+
+          <div *ngIf="newInspection.result === 'Fail'" class="p-4 bg-red-subtle border border-red rounded-lg mb-4">
+            <div class="text-xs font-bold uppercase text-danger mb-3">
+              <i class="fa-solid fa-bug mr-1"></i> Mandatory Defect Classification (Collection: Inspections.defects[])
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="form-label text-[11px]">Defect Type</label>
+                <select [(ngModel)]="newInspection.defect.defectType" name="defectType" class="form-control text-xs">
+                  <option value="Dimensional">Dimensional</option>
+                  <option value="Surface-Finish">Surface-Finish</option>
+                  <option value="Structural">Structural</option>
+                  <option value="Material-Impurity">Material-Impurity</option>
+                  <option value="Assembly-Error">Assembly-Error</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label text-[11px]">Defective Units Count</label>
+                <input type="number" [(ngModel)]="newInspection.defect.defectiveUnitCount" name="defectiveUnitCount"
+                  class="form-control text-xs" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="form-label text-[11px]">Root Cause Category</label>
+                <select [(ngModel)]="newInspection.defect.rootCauseCategory" name="rootCauseCategory"
+                  class="form-control text-xs">
+                  <option value="Machine-Fault">Machine-Fault</option>
+                  <option value="Raw-Material-Defect">Raw-Material-Defect</option>
+                  <option value="Operator-Error">Operator-Error</option>
+                  <option value="Process-Deviation">Process-Deviation</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label text-[11px]">Corrective Action (CAPA)</label>
+                <select [(ngModel)]="newInspection.defect.correctiveAction" name="correctiveAction"
+                  class="form-control text-xs">
+                  <option value="Rework">Rework</option>
+                  <option value="Scrap">Scrap</option>
+                  <option value="Recalibrate-Machine">Recalibrate-Machine</option>
+                  <option value="Flag-Supplier">Flag-Supplier</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group mb-0">
+              <label class="form-label text-[11px]">Root Cause Description</label>
+              <input type="text" [(ngModel)]="newInspection.defect.rootCause" name="rootCause"
+                placeholder="e.g., CNC Tool wear" class="form-control text-xs" />
+            </div>
+          </div>
+
+          <div *ngIf="newInspection.result === 'Pass'" class="p-4 rounded-lg mb-4" style="background:var(--success-bg);border:1px solid var(--success-border)">
+            <div class="text-center">
+              <i class="fa-solid fa-circle-check text-success" style="font-size:2rem"></i>
+              <div class="font-bold text-sm text-success mt-2">Audit Verdict: PASS — No Defects to Tag</div>
+            </div>
+          </div>
+
+          <div class="flex justify-between mt-4">
+            <button type="button" (click)="wizardStep = 1" class="btn btn-secondary">← Back</button>
+            <button type="button" (click)="wizardStep = 3" class="btn btn-primary">Next: Sign-Off →</button>
+          </div>
+        </div>
+
+        <!-- STEP 3: Sign-Off & Stamp -->
+        <div *ngIf="wizardStep === 3">
+          <h4 class="font-bold mb-3" style="color:var(--text-heading)"><i class="fa-solid fa-stamp text-blue mr-2"></i>Step 3: Inspector Sign-Off & Approval Stamp</h4>
+
+          <div class="form-group">
+            <label class="form-label">Audit Remarks / Technician Notes</label>
+            <textarea [(ngModel)]="newInspection.remarks" name="remarks" rows="3" class="form-control"></textarea>
+          </div>
+
+          <!-- Electronic Signature Box -->
+          <div class="signature-box" [class.signed]="wizardSigned" (click)="signInspection()">
+            <i class="fa-solid stamp-icon" [ngClass]="wizardSigned ? 'fa-circle-check' : 'fa-stamp'"></i>
+            <div *ngIf="!wizardSigned">Click to Apply Digital Signature</div>
+            <div *ngIf="wizardSigned" class="font-bold">✓ Digitally Signed by {{ newInspection.inspectorName }}</div>
+            <div *ngIf="wizardSigned" class="text-xs">{{ newInspection.inspectionCode }} • {{ newInspection.result }}</div>
+          </div>
+
+          <div class="flex justify-between mt-6 pt-4 border-t border-subtle">
+            <button type="button" (click)="wizardStep = 2" class="btn btn-secondary">← Back</button>
+            <button type="submit" class="btn btn-primary" [disabled]="!wizardSigned">
+              <i class="fa-solid fa-check-double"></i> Submit Quality Audit
+            </button>
+          </div>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Register Machine (Module 5) -->
+  <div *ngIf="activeModal === 'newMachine'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-gears text-blue mr-2"></i> Register Machine Asset</h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form (ngSubmit)="submitNewMachine()">
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Machine Code</label>
+            <input type="text" [(ngModel)]="newMachine.machineCode" name="machineCode" required class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Machine Name</label>
+            <input type="text" [(ngModel)]="newMachine.name" name="name" required class="form-control" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <input type="text" [(ngModel)]="newMachine.type" name="type" required class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Production Line</label>
+            <input type="text" [(ngModel)]="newMachine.productionLine" name="productionLine" required
+              class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Capacity (Units/Hr)</label>
+            <input type="number" [(ngModel)]="newMachine.capacityPerHour" name="capacityPerHour" required
+              class="form-control" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Lead Operator in Charge</label>
+          <input type="text" [(ngModel)]="newMachine.operatorInCharge" name="operatorInCharge" required
+            class="form-control" />
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-subtle">
+          <button type="button" (click)="closeModal()" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Machine Asset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Onboard Supplier (Module 1) -->
+  <div *ngIf="activeModal === 'newSupplier'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-handshake text-blue mr-2"></i> Onboard Approved Supplier
+        </h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form (ngSubmit)="submitNewSupplier()">
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Supplier Code</label>
+            <input type="text" [(ngModel)]="newSupplier.supplierCode" name="supplierCode" required
+              class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Company Name</label>
+            <input type="text" [(ngModel)]="newSupplier.name" name="name" required class="form-control" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Contact Person</label>
+            <input type="text" [(ngModel)]="newSupplier.contactPerson" name="contactPerson" required
+              class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" [(ngModel)]="newSupplier.email" name="email" required class="form-control" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="text" [(ngModel)]="newSupplier.phone" name="phone" required class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Lead Time (Days)</label>
+            <input type="number" [(ngModel)]="newSupplier.leadTimeDays" name="leadTimeDays" required
+              class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status Gate</label>
+            <select [(ngModel)]="newSupplier.status" name="status" class="form-control">
+              <option value="Active">Active</option>
+              <option value="Suspended">Suspended</option>
+              <option value="Blacklisted">Blacklisted</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Materials Supplied (comma separated)</label>
+          <input type="text" [(ngModel)]="newSupplier.materialsSupplied" name="materialsSupplied"
+            placeholder="Titanium, Aluminum 6061..." class="form-control" />
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-subtle">
+          <button type="button" (click)="closeModal()" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Onboard Supplier</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Register Material (Module 2) -->
+  <div *ngIf="activeModal === 'newMaterial'" class="modal-overlay" (click)="closeModal()">
+    <div class="modal-content p-6" (click)="$event.stopPropagation()">
+      <div class="flex-between mb-4 pb-3 border-b border-subtle">
+        <h3 class="font-bold text-lg"><i class="fa-solid fa-boxes-stacked text-blue mr-2"></i> Register Raw Material SKU
+        </h3>
+        <button (click)="closeModal()" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form (ngSubmit)="submitNewMaterial()">
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Material SKU</label>
+            <input type="text" [(ngModel)]="newMaterial.sku" name="sku" required class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Material Name</label>
+            <input type="text" [(ngModel)]="newMaterial.name" name="name" required class="form-control" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <input type="text" [(ngModel)]="newMaterial.category" name="category" required class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit of Measure</label>
+            <select [(ngModel)]="newMaterial.unit" name="unit" class="form-control">
+              <option value="kg">kg</option>
+              <option value="liters">liters</option>
+              <option value="meters">meters</option>
+              <option value="units">units</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit Cost ($)</label>
+            <input type="number" [(ngModel)]="newMaterial.unitCost" name="unitCost" required class="form-control" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-group">
+            <label class="form-label">Initial Stock</label>
+            <input type="number" [(ngModel)]="newMaterial.currentStock" name="currentStock" required
+              class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Reorder Level Alert Threshold</label>
+            <input type="number" [(ngModel)]="newMaterial.reorderLevel" name="reorderLevel" required
+              class="form-control" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Approved Source Supplier</label>
+          <select [(ngModel)]="newMaterial.supplierId" name="supplierId" required class="form-control">
+            <option *ngFor="let s of suppliers" [value]="s._id || s.id" [disabled]="s.status === 'Blacklisted'">
+              {{ s.name }} ({{ s.supplierCode }}) - {{ s.status }}
+            </option>
+          </select>
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-subtle">
+          <button type="button" (click)="closeModal()" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Register SKU</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
